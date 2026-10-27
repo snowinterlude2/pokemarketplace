@@ -1,0 +1,134 @@
+@import '@fontsource/luckiest-guy/latin-400.css';
+@import '@fontsource/bangers/latin-400.css';
+@import '@fontsource/rubik/latin-400.css';
+@import '@fontsource/rubik/latin-500.css';
+@import '@fontsource/rubik/latin-700.css';
+@import 'tailwindcss';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: 'Rubik', ui-sans-serif, system-ui, sans-serif;
+  --font-display: 'Luckiest Guy', 'Bangers', system-ui, sans-serif;
+  --font-comic: 'Bangers', 'Luckiest Guy', system-ui, sans-serif;
+
+  --color-dex-bg: #f3f3f3;
+  --color-dex-bar: #e2e2e2;
+  --color-dex-pill: #e6e6e6;
+  --color-dex-ink: #141414;
+  --color-poke-red: #e3350d;
+  --color-poke-yellow: #ffcb05;
+  --color-poke-blue: #2a75bb;
+  --color-poke-navy: #1d3f8a;
+}
+
+html {
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  @apply bg-dex-bg font-sans text-dex-ink antialiased;
+}
+
+.dark body {
+  background: #111317;
+  color: #e9e9ec;
+}
+
+/* Pokémon-logo style wordmark: yellow fill, blue outline, chunky shadow. */
+.poke-title {
+  font-family: var(--font-display);
+  color: var(--color-poke-yellow);
+  -webkit-text-stroke: 0.14em var(--color-poke-navy);
+  paint-order: stroke fill;
+  text-shadow: 0.06em 0.08em 0 var(--color-poke-navy);
+  letter-spacing: 0.04em;
+  line-height: 1;
+}
+
+.poke-title-sm {
+  -webkit-text-stroke-width: 0.16em;
+}
+
+.card-name {
+  font-family: var(--font-display);
+  letter-spacing: 0.12em;
+}
+
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+@layer components {
+.dex-pill {
+  @apply font-comic rounded-lg border-2 border-dex-ink bg-dex-pill px-3.5 py-1 text-[17px] tracking-wider whitespace-nowrap italic transition-colors;
+}
+.dex-pill:hover {
+  @apply bg-white;
+}
+.dex-pill[aria-pressed='true'] {
+  @apply bg-dex-ink text-white;
+}
+.dark .dex-pill {
+  @apply border-neutral-500 bg-neutral-800 text-neutral-100;
+}
+.dark .dex-pill:hover {
+  @apply bg-neutral-700;
+}
+.dark .dex-pill[aria-pressed='true'] {
+  @apply border-poke-yellow bg-poke-yellow text-dex-ink;
+}
+
+.field {
+  @apply w-full rounded-lg border-2 border-dex-ink/80 bg-white px-3 py-2 text-[15px] outline-none transition placeholder:text-neutral-400 focus:border-poke-blue focus:ring-2 focus:ring-poke-blue/30;
+}
+.dark .field {
+  @apply border-neutral-600 bg-neutral-900 text-neutral-100 focus:border-poke-yellow focus:ring-poke-yellow/30;
+}
+.label {
+  @apply font-comic mb-1 block text-[15px] tracking-wider text-neutral-700;
+}
+.dark .label {
+  @apply text-neutral-300;
+}
+
+.btn {
+  @apply font-comic inline-flex items-center justify-center gap-2 rounded-xl border-2 border-dex-ink px-4 py-2 text-lg tracking-wider transition active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50;
+}
+.btn-primary {
+  @apply bg-poke-red text-white shadow-[0_3px_0_#141414] hover:brightness-110;
+}
+.btn-ghost {
+  @apply bg-dex-pill hover:bg-white;
+}
+.dark .btn {
+  @apply border-neutral-500;
+}
+.dark .btn-ghost {
+  @apply bg-neutral-800 text-neutral-100 hover:bg-neutral-700;
+}
+
+.panel {
+  @apply rounded-2xl border-2 border-dex-ink/10 bg-white shadow-sm;
+}
+.dark .panel {
+  @apply border-white/10 bg-[#1b1e24];
+}
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.pop-in {
+  animation: pop-in 0.35s ease-out both;
+}

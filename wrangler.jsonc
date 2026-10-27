@@ -1,0 +1,19 @@
+// Cloudflare Workers config (free tier).
+// Static site from ./dist, plus a tiny Worker that only handles /api/* (PayPal checkout).
+// Secrets live in Cloudflare, never in this file:
+//   npx wrangler secret put PAYPAL_CLIENT_SECRET
+//   npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY
+{
+  "name": "pokemarketplace",
+  "main": "./worker/index.js",
+  "compatibility_date": "2026-09-01",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "vars": {
+    "PAYPAL_ENV": "sandbox"
+  }
+}
