@@ -1,11 +1,15 @@
 extends Node3D
-## Physics sandbox: flat arena, a heavy bag to hit, the player rig and a debug HUD.
+## Physics sandbox: flat arena, a humanoid dummy and a heavy bag to hit, the player rig and a debug HUD.
+## B swaps between the dummy station and the bag station.
 
-const BAG_POS := Vector3(0.0, 1.2, -0.95)
+const DUMMY_POS := Vector3(0.0, 0.0, -0.90)
+const BAG_POS := Vector3(2.5, 1.2, -0.95)
 const BAG_TOP := 2.05
 
 var player: Player
 var bag: RigidBody3D
+var dummy: Dummy
+var _at_bag := false
 var _bag_start: Transform3D
 var _hud_status: Label
 var _hud_hit: Label
@@ -16,8 +20,11 @@ func _ready() -> void:
 	_build_environment()
 	_build_arena()
 	_build_bag()
+	dummy = Dummy.new()
+	dummy.position = DUMMY_POS
+	add_child(dummy)
 	player = Player.new()
-	player.target = bag
+	player.target = dummy.chest
 	add_child(player)
 	player.strike_landed.connect(_on_strike)
 	_build_hud()
@@ -32,7 +39,12 @@ func _process(delta: float) -> void:
 
 func _unhandled_key_input(event: InputEvent) -> void:
 	var k := event as InputEventKey
+	if k and k.pressed and not k.echo and k.keycode == KEY_B:
+		_at_bag = not _at_bag
+		player.target = bag if _at_bag else dummy.chest
+		player.global_position = Vector3(BAG_POS.x if _at_bag else DUMMY_POS.x, 0.0, 0.0)
 	if k and k.pressed and not k.echo and k.keycode == KEY_R:
+		dummy.reset()
 		PhysicsServer3D.body_set_state(bag.get_rid(), PhysicsServer3D.BODY_STATE_TRANSFORM, _bag_start)
 		PhysicsServer3D.body_set_state(bag.get_rid(), PhysicsServer3D.BODY_STATE_LINEAR_VELOCITY, Vector3.ZERO)
 		PhysicsServer3D.body_set_state(bag.get_rid(), PhysicsServer3D.BODY_STATE_ANGULAR_VELOCITY, Vector3.ZERO)
@@ -150,7 +162,7 @@ func _build_hud() -> void:
 	var layer := CanvasLayer.new()
 	add_child(layer)
 	var help := Label.new()
-	help.text = "Click = capture mouse   Esc = release   C = 3rd-person debug cam   R = reset bag   WASD = move\n" \
+	help.text = "Click = capture mouse   Esc = release   C = 3rd-person debug cam   R = reset   B = dummy / bag   WASD = move\n" \
 		+ "No buttons: mouse = sway/slip, Ctrl = duck, Ctrl+mouse X = roll under\n" \
 		+ "RMB / LMB: punch (push mouse forward to extend, sideways = hook). +Ctrl = body\n" \
 		+ "RMB+LMB: block head (+Ctrl body)\n" \
@@ -158,11 +170,11 @@ func _build_hud() -> void:
 	help.position = Vector2(12.0, 8.0)
 	layer.add_child(help)
 	_hud_status = Label.new()
-	_hud_status.position = Vector2(12.0, 110.0)
+	_hud_status.position = Vector2(12.0, 140.0)
 	_hud_status.add_theme_font_size_override("font_size", 22)
 	layer.add_child(_hud_status)
 	_hud_hit = Label.new()
-	_hud_hit.position = Vector2(12.0, 145.0)
+	_hud_hit.position = Vector2(12.0, 175.0)
 	_hud_hit.add_theme_font_size_override("font_size", 22)
 	_hud_hit.modulate.a = 0.0
 	layer.add_child(_hud_hit)

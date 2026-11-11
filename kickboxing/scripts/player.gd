@@ -17,12 +17,12 @@ extends CharacterBody3D
 
 signal strike_landed(info: Dictionary)
 
-const SHOULDER_X := 0.20
+const SHOULDER_X := 0.22
 const SHOULDER_Y := 0.52
 const HEAD_LOCAL := Vector3(0.0, 0.70, -0.06)
 const HIP_X := 0.10
 const ARM_U := 0.30
-const ARM_L := 0.30
+const ARM_L := 0.27 # elbow -> wrist; the fist adds ~0.05 m of reach
 const LEG_U := 0.45
 const LEG_L := 0.45
 const PELVIS_STAND_Y := 0.88
@@ -34,9 +34,10 @@ const PUNCH_GAIN := 0.0045 # extension per mouse pixel
 const KICK_GAIN := 0.0035
 const ARC_GAIN := 0.0040 # radians per mouse pixel
 const RETRACT := 2.6 # extension lost per second when not pushing
-const KICK_PITCH_LOW := -0.55
-const KICK_PITCH_MID := 0.20
-const KICK_PITCH_HIGH := 0.85
+const KICK_PITCH_LOW := -0.22 # shin lands on the thigh (~0.6 m)
+const KICK_PITCH_MID := 0.55 # ribs / liver (~1.3 m)
+const KICK_PITCH_HIGH := 1.25 # head (~1.7 m)
+const FIST_LEN := 0.05 # wrist -> knuckles
 const HAND_MASS := 4.0 # effective kg behind a punch
 const FOOT_MASS := 9.0 # effective kg behind a kick
 
@@ -55,12 +56,14 @@ var torso: Node3D
 var head: Node3D
 var cam: Camera3D
 var chase_cam: Camera3D
-var _head_mesh: Node3D
-var _torso_mesh: Node3D
+var _body_only: Array[Node3D] = [] # meshes hidden in first person (head, torso, shoulders)
 
 var _arm_up: Array[Node3D] = []
 var _arm_lo: Array[Node3D] = []
-var _gloves: Array[Node3D] = []
+var _fists: Array[Node3D] = []
+var _delts: Array[Node3D] = []
+var _elbows: Array[Node3D] = []
+var _knees: Array[Node3D] = []
 var _leg_up: Array[Node3D] = []
 var _leg_lo: Array[Node3D] = []
 var _feet: Array[Node3D] = []
@@ -124,8 +127,8 @@ func _input(event: InputEvent) -> void:
 
 func _set_third_person(on: bool) -> void:
 	_third_person = on
-	_head_mesh.visible = on
-	_torso_mesh.visible = on
+	for m in _body_only:
+		m.visible = on
 	if on:
 		chase_cam.make_current()
 	else:
@@ -197,7 +200,7 @@ func _process(delta: float) -> void:
 			hand_ext[i] = _drive(hand_ext[i], -mouse.y, PUNCH_GAIN, delta)
 			hand_arc[i] = clampf(hand_arc[i] + mouse.x * ARC_GAIN, -0.9, 0.9)
 			if hand_ext[i] < 0.3:
-				hand_pitch[i] = lerpf(hand_pitch[i], -0.45 if ctrl else 0.04, 1.0 - exp(-14.0 * delta))
+				hand_pitch[i] = lerpf(hand_pitch[i], -0.45 if ctrl else 0.26, 1.0 - exp(-14.0 * delta))
 			if hand_ext[i] < 0.05:
 				hand_arc[i] = move_toward(hand_arc[i], 0.0, 1.5 * delta)
 		else:
@@ -254,6 +257,7 @@ func _process(delta: float) -> void:
 	var lean_back := 0.0
 	var lean_roll := 0.0
 	var drop := 0.0
+	var rise := 0.0
 	for i in 2:
 		var side := -1.0 if i == 0 else 1.0
 		var hook := minf(absf(hand_arc[i]) / 0.5, 1.0)
@@ -264,11 +268,12 @@ func _process(delta: float) -> void:
 		var hf := maxf(0.0, leg_pitch[i]) / KICK_PITCH_HIGH
 		lean_back += leg_ext[i] * (0.05 + 0.30 * hf)
 		lean_roll += side * leg_ext[i] * hf * 0.30
+		rise += leg_ext[i] * hf * 0.05 # come up on the ball of the support foot
 		lunge = maxf(lunge, leg_ext[i] * 0.06)
 		if leg_pitch[i] < 0.0:
 			drop += leg_ext[i] * 0.06
 
-	var pelvis_y := PELVIS_STAND_Y - duck * 0.42 - absf(sway_s.x) * 0.20 - drop
+	var pelvis_y := PELVIS_STAND_Y - duck * 0.42 - absf(sway_s.x) * 0.20 - drop + rise
 	pelvis.position = Vector3(sway_s.x, pelvis_y, sway_s.y - lunge)
 	pelvis.rotation = Vector3(sway_s.y + lean_back - duck * 0.35, 0.0, -sway_s.x * 1.1 + lean_roll)
 	hip_yaw.rotation.y = lerp_angle(hip_yaw.rotation.y, hip_turn, 1.0 - exp(-18.0 * delta))
@@ -329,8 +334,13 @@ func _update_arms(delta: float, block_mode: bool, ctrl: bool) -> void:
 		var tip: Vector3 = res[1]
 		Limb.place(_arm_up[i], sh, mid)
 		Limb.place(_arm_lo[i], mid, tip)
-		_gloves[i].position = tip
-		hand_world[i] = torso.to_global(tip)
+		_delts[i].position = sh
+		_elbows[i].position = mid
+		# fist follows the forearm, knuckles forward, palm down
+		var fdir := (tip - mid).normalized()
+		var fup := Vector3.UP if absf(fdir.dot(Vector3.UP)) < 0.95 else Vector3.BACK
+		_fists[i].transform = Transform3D(Basis.looking_at(fdir, fup), tip)
+		hand_world[i] = torso.to_global(tip + fdir * FIST_LEN)
 
 
 func _update_legs(delta: float) -> void:
@@ -377,6 +387,7 @@ func _update_legs(delta: float) -> void:
 		var tip: Vector3 = res[1]
 		Limb.place(_leg_up[i], hip_l, knee)
 		Limb.place(_leg_lo[i], knee, tip)
+		_knees[i].position = knee
 		_feet[i].position = tip
 		_feet[i].basis = Basis.looking_at(dir_hy, Vector3.UP)
 		foot_world[i] = hip_yaw.to_global(tip)
@@ -410,7 +421,9 @@ func _on_hit(body: Node3D, kind: String, i: int) -> void:
 	rb.apply_impulse(imp, pos - rb.global_position)
 	_hit_cd[key] = 0.3
 	var zone := "BODY"
-	if pos.y > 1.45:
+	if rb.has_meta("part"):
+		zone = Dummy.zone_for(rb, pos)
+	elif pos.y > 1.45:
 		zone = "HEAD"
 	elif pos.y < 0.70:
 		zone = "LEG"
@@ -437,6 +450,73 @@ func _capsule(radius: float, length: float, c: Color, parent: Node3D) -> MeshIns
 	return mi
 
 
+## Tapered limb segment for Limb.place(): r_a at the start joint, r_b at the end joint.
+func _taper(r_a: float, r_b: float, length: float, c: Color, parent: Node3D) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	var cm := CylinderMesh.new()
+	cm.bottom_radius = r_a
+	cm.top_radius = r_b
+	cm.height = length
+	cm.radial_segments = 12
+	cm.rings = 1
+	mi.mesh = cm
+	mi.material_override = _mat(c)
+	parent.add_child(mi)
+	return mi
+
+
+func _sphere(radius: float, c: Color, parent: Node3D) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	var sm := SphereMesh.new()
+	sm.radius = radius
+	sm.height = radius * 2.0
+	sm.radial_segments = 16
+	sm.rings = 8
+	mi.mesh = sm
+	mi.material_override = _mat(c)
+	parent.add_child(mi)
+	return mi
+
+
+func _box(size: Vector3, c: Color, parent: Node3D, pos := Vector3.ZERO) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	bm.size = size
+	mi.mesh = bm
+	mi.material_override = _mat(c)
+	mi.position = pos
+	parent.add_child(mi)
+	return mi
+
+
+## MMA glove: open-finger fist with padding over the knuckles and back of the hand, wrist wrap.
+## -Z = punching direction, +Y = back of the hand. `inward` is +1/-1: which local X the thumb sits on.
+func _make_fist(skin: Color, glove: Color, parent: Node3D, inward: float) -> Node3D:
+	var f := Node3D.new()
+	parent.add_child(f)
+	var parts := [
+		[Vector3(0.080, 0.062, 0.085), skin, Vector3(0.0, -0.004, -0.040)], # fist
+		[Vector3(0.090, 0.046, 0.050), glove, Vector3(0.0, 0.010, -0.066)], # knuckle pad
+		[Vector3(0.084, 0.030, 0.070), glove, Vector3(0.0, 0.026, -0.036)], # back-of-hand pad
+		[Vector3(0.026, 0.026, 0.050), skin, Vector3(inward * 0.040, -0.018, -0.052)], # thumb
+	]
+	for pt in parts:
+		var mi := _sphere(0.5, pt[1], f)
+		mi.scale = pt[0]
+		mi.position = pt[2]
+	var wrap := _taper(0.034, 0.036, 0.045, glove.lightened(0.15), f)
+	wrap.rotation = Vector3(-PI * 0.5, 0.0, 0.0)
+	return f
+
+
+func _make_foot(skin: Color, parent: Node3D) -> Node3D:
+	var f := Node3D.new()
+	parent.add_child(f)
+	_box(Vector3(0.090, 0.070, 0.17), skin, f, Vector3(0.0, -0.025, -0.02)) # heel + arch
+	_box(Vector3(0.088, 0.040, 0.08), skin, f, Vector3(0.0, -0.040, -0.14)) # toes
+	return f
+
+
 func _make_area(radius: float, kind: String, i: int) -> Area3D:
 	var ar := Area3D.new()
 	ar.top_level = true
@@ -454,7 +534,7 @@ func _make_area(radius: float, kind: String, i: int) -> Area3D:
 
 func _build_rig() -> void:
 	var skin := Color(0.85, 0.65, 0.5)
-	var glove := Color(0.75, 0.08, 0.08)
+	var glove := Color(0.08, 0.08, 0.09)
 	var shorts := Color(0.1, 0.1, 0.4)
 
 	var col := CollisionShape3D.new()
@@ -474,27 +554,24 @@ func _build_rig() -> void:
 	head = Node3D.new()
 	pelvis.add_child(head)
 
-	var pelvis_mesh := MeshInstance3D.new()
-	var bm := BoxMesh.new()
-	bm.size = Vector3(0.34, 0.2, 0.2)
-	pelvis_mesh.mesh = bm
-	pelvis_mesh.material_override = _mat(shorts)
-	hip_yaw.add_child(pelvis_mesh)
+	# hips / shorts
+	var hips := _sphere(0.17, shorts, hip_yaw)
+	hips.scale = Vector3(1.0, 0.75, 0.68)
+	hips.position = Vector3(0.0, -0.02, 0.0)
 
-	var tm := _capsule(0.18, 0.40, skin, torso)
-	tm.position = Vector3(0.0, 0.30, 0.0)
-	_torso_mesh = tm
-	var hm := MeshInstance3D.new()
-	var sm := SphereMesh.new()
-	sm.radius = 0.11
-	sm.height = 0.22
-	hm.mesh = sm
-	hm.material_override = _mat(skin)
+	# torso: abdomen, chest, neck, head (third-person only)
+	var abdomen := _capsule(0.13, 0.12, skin, torso)
+	abdomen.scale = Vector3(1.05, 1.0, 0.78)
+	abdomen.position = Vector3(0.0, 0.14, 0.0)
+	var chest := _capsule(0.16, 0.16, skin, torso)
+	chest.scale = Vector3(1.18, 1.0, 0.72)
+	chest.position = Vector3(0.0, 0.38, 0.0)
+	var neck := _taper(0.055, 0.05, 0.14, skin, torso)
+	neck.position = Vector3(0.0, 0.60, -0.02)
+	var hm := _sphere(0.105, skin, head)
+	hm.scale = Vector3(0.92, 1.1, 1.0)
 	hm.position = Vector3(0.0, 0.0, 0.06)
-	head.add_child(hm)
-	_head_mesh = hm
-	_head_mesh.visible = false
-	_torso_mesh.visible = false
+	_body_only.append_array([abdomen, chest, neck, hm])
 
 	cam = Camera3D.new()
 	cam.fov = 80.0
@@ -508,29 +585,25 @@ func _build_rig() -> void:
 	chase_cam.position = Vector3(2.4, 1.3, -0.3)
 
 	for i in 2:
-		_arm_up.append(_capsule(0.045, ARM_U, skin, torso))
-		_arm_lo.append(_capsule(0.04, ARM_L, skin, torso))
-		var g := MeshInstance3D.new()
-		var gm := SphereMesh.new()
-		gm.radius = 0.085
-		gm.height = 0.17
-		g.mesh = gm
-		g.material_override = _mat(glove)
-		torso.add_child(g)
-		_gloves.append(g)
+		_arm_up.append(_taper(0.050, 0.040, ARM_U, skin, torso))
+		_arm_lo.append(_taper(0.040, 0.030, ARM_L, skin, torso))
+		var delt := _sphere(0.058, skin, torso)
+		_delts.append(delt)
+		_body_only.append(delt)
+		_elbows.append(_sphere(0.041, skin, torso))
+		_fists.append(_make_fist(skin, glove, torso, 1.0 if i == 0 else -1.0))
 
-		_leg_up.append(_capsule(0.07, LEG_U, skin, hip_yaw))
-		_leg_lo.append(_capsule(0.055, LEG_L, skin, hip_yaw))
-		var f := Node3D.new()
-		var fm := MeshInstance3D.new()
-		var fb := BoxMesh.new()
-		fb.size = Vector3(0.11, 0.08, 0.26)
-		fm.mesh = fb
-		fm.material_override = _mat(skin)
-		fm.position = Vector3(0.0, -0.02, -0.06)
-		f.add_child(fm)
-		hip_yaw.add_child(f)
-		_feet.append(f)
+		_leg_up.append(_taper(0.085, 0.058, LEG_U, skin, hip_yaw))
+		var calf := _taper(0.056, 0.038, LEG_L, skin, hip_yaw)
+		var bulge := _capsule(0.058, 0.10, skin, calf) # calf muscle, upper half of the shin
+		bulge.position = Vector3(0.0, -0.08, 0.0)
+		bulge.scale = Vector3(1.0, 1.0, 1.0)
+		_leg_lo.append(calf)
+		_knees.append(_sphere(0.056, skin, hip_yaw))
+		_feet.append(_make_foot(skin, hip_yaw))
 
-		_hand_area.append(_make_area(0.13, "hand", i))
-		_foot_area.append(_make_area(0.15, "foot", i))
+		_hand_area.append(_make_area(0.065, "hand", i))
+		_foot_area.append(_make_area(0.13, "foot", i))
+
+	for m in _body_only:
+		m.visible = false
